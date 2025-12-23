@@ -14,7 +14,14 @@ import torch.nn.functional as F
 import numpy as np
 from torch_geometric.nn.pool import knn_graph
 from torch_geometric.transforms import Compose
-from torch_geometric.utils.subgraph import subgraph
+# TODOO: remove this try-except block.
+try:
+    # PyG newer versions re-export `subgraph` from torch_geometric.utils
+    from torch_geometric.utils import subgraph
+except Exception:
+    # Older PyG versions had it as a dedicated module
+    print("Using older PyG version")
+    from torch_geometric.utils.subgraph import subgraph
 from torch_geometric.nn import knn, radius
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_scatter import scatter_add

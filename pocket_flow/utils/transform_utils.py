@@ -2,7 +2,15 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.nn.pool import knn_graph, radius_graph
 from torch_geometric.transforms import Compose
-from torch_geometric.utils.subgraph import subgraph
+
+try:
+    # PyG newer versions re-export `subgraph` from torch_geometric.utils
+    from torch_geometric.utils import subgraph
+except Exception:
+    # Older PyG versions had it as a dedicated module
+    print("Using older PyG version")
+    from torch_geometric.utils.subgraph import subgraph
+
 from torch_geometric.nn import knn, radius
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_scatter import scatter_add
@@ -288,7 +296,7 @@ def get_tri_edges(edge_index_query, pos_query, idx_ligand, ligand_bond_index, li
     for node in torch.arange(pos_query.size(0)):
         num_edges = (row == node).sum()
         index_edge_i = torch.arange(num_edges, dtype=torch.long, ) + acc_num_edges
-        index_edge_i, index_edge_j = torch.meshgrid(index_edge_i, index_edge_i, indexing=None)
+        index_edge_i, index_edge_j = torch.meshgrid(index_edge_i, index_edge_i, indexing='ij')
         index_edge_i, index_edge_j = index_edge_i.flatten(), index_edge_j.flatten()
         index_real_cps_edge_i_list.append(index_edge_i)
         index_real_cps_edge_j_list.append(index_edge_j)

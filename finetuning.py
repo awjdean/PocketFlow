@@ -1,6 +1,6 @@
 import torch
 from pocket_flow.gdbp_model import PocketFlow, reset_parameters, freeze_parameters
-from pocket_flow.utils import Experiment, LoadDataset
+from pocket_flow.utils import Experiment, LoadDataset, load_model_from_ckpt
 from pocket_flow.utils.transform import *
 #from utils.ParseFile import Protein, parse_sdf_to_dict
 from pocket_flow.utils.data import ComplexData, torchify_dict
@@ -32,10 +32,7 @@ train_set, valid_set = LoadDataset.split(dataset, val_num=100, shuffle=True, ran
 dataset[0]
 ## reset parameters
 device = 'cuda:0'
-ckpt = torch.load('../path/to/pretrained/ckpt.pt', map_location=device)
-config = ckpt['config']
-model = PocketFlow(config).to(device)
-model.load_state_dict(ckpt['model'])
+model = load_model_from_ckpt(PocketFlow, '../path/to/pretrained/ckpt.pt', device)
 print(model.get_parameter_number())
 keys = ['edge_flow.flow_layers.5', 'atom_flow.flow_layers.5', 
         'pos_predictor.mu_net', 'pos_predictor.logsigma_net', 'pos_predictor.pi_net',

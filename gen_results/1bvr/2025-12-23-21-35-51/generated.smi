@@ -1,0 +1,10 @@
+O=C(O)CCc1cc(CC2CCCC3(CCC(Cl)CC3)C2)ccc1
+C=C(CN1CCCC1=O)c1cc(-c2cc(F)ccc2)cc(O)c1
+CC=CCC=CC(C)(c1ccccc1)c1ccc(C2=C(C)CC(F)(C(=O)O)c3ccc(C(=O)O)cc3C2)cc1
+O=C=C(c1ccccc1)C(F)F
+O=C=C(c1ccccc1)C(F)F
+O=C=C(c1ccccc1)C(F)F
+O=C=C(c1ccccc1)C(F)F
+NC1CCC2(CN1)c1ccc(F)cc1CC2(F)Cl
+NC1CCC2(CN1)c1ccc(F)cc1CC2(F)Cl
+C=CC(=C)c1cccc(CCCCC(C=O)CCCc2ccccc2)c1

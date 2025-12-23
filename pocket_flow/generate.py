@@ -30,7 +30,7 @@ class Generate(object):
         self.choose_max = choose_max
         self.hidden_channels = model.config.hidden_channels
         self.knn = model.config.encoder.knn
-        self.device = device
+        self.device = torch.device(device)
         self.bond_type_map =  {
             1: Chem.rdchem.BondType.SINGLE, 
             2: Chem.rdchem.BondType.DOUBLE, 
@@ -244,12 +244,12 @@ class Generate(object):
         data = data.to(self.device)
         with torch.no_grad():
             self.prior_node = torch.distributions.normal.Normal(
-                    torch.zeros([len(self.atom_type_map)]).cuda(data.cpx_pos.device), 
-                    self.temperature[0] * torch.ones([len(self.atom_type_map)]).cuda(data.cpx_pos.device)
+                    torch.zeros(len(self.atom_type_map), device=data.cpx_pos.device),
+                    self.temperature[0] * torch.ones(len(self.atom_type_map), device=data.cpx_pos.device)
                     )
             self.prior_edge = torch.distributions.normal.Normal(
-                    torch.zeros([self.num_bond_type]).cuda(data.cpx_pos.device), 
-                    self.temperature[1] * torch.ones([self.num_bond_type]).cuda(data.cpx_pos.device)
+                    torch.zeros(self.num_bond_type, device=data.cpx_pos.device),
+                    self.temperature[1] * torch.ones(self.num_bond_type, device=data.cpx_pos.device)
                     )
             
             rw_mol = Chem.RWMol()

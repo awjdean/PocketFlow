@@ -1,0 +1,8 @@
+[tools]
+pixi = "0.62.0"
+
+[tasks]
+# Inference (default env)
+install = "pixi install --locked"
+smoke = "pixi run smoke"
+test-load-ckpt = "pixi run test-load-ckpt"

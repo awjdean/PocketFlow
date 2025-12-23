@@ -1,0 +1,110 @@
+[project]
+name = "pocketflow"
+version = "0.0.0"
+description = "Local runner for PocketFlow"
+requires-python = "~=3.10"
+
+# Pure-Python deps via PyPI (Pixi installs these with pip).
+# Keep this inference-only; training/visualisation extras go in Pixi features below.
+dependencies = [
+  "easydict==1.10",
+  "torchdiffeq==0.2.3",
+  "meeko==0.4.0",
+  "zuko==1.0.1",
+  "imageio==2.33.1",
+]
+
+[tool.pixi.workspace]
+name = "pocketflow"
+# Keep channels simple to avoid strict-priority conflicts across PyTorch/PyG stacks.
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64"]
+
+[tool.pixi.dependencies]
+python = "3.10.*"
+pip = "*"
+
+# CLI tooling
+ripgrep = "*"
+
+# Chem / native stack
+rdkit = "*"
+openbabel = "*"
+
+# Scientific stack
+# NOTE: Relax numpy pin to avoid blocking modern PyTorch/PyG builds.
+numpy = ">=1.26,<2"
+scipy = "*"
+pandas = "*"
+pyyaml = "*"
+tqdm = "*"
+python-lmdb = "*"
+h5py = "*"
+pillow = "*"
+scikit-learn = "*"
+
+# ML core
+pytorch = "*"
+
+# PyTorch Geometric stack (explicit)
+# conda-forge package name is `pytorch_geometric`
+pytorch_geometric = "*"
+
+# Compiled PyG extension libs (these provide torch_scatter/torch_cluster/etc)
+pytorch_scatter = "*"
+pytorch_cluster = "*"
+pytorch_sparse = "*"
+pytorch_spline_conv = "*"
+
+# Optional acceleration library for PyG (kept in default env; remove if it causes trouble)
+"pyg-lib" = "*"
+
+
+# Pocket splitting
+pymol-open-source = "*"
+
+# Training dependencies
+tensorboard = "*"
+
+# -----------------------------
+# Environments
+# -----------------------------
+[tool.pixi.environments]
+# default env = inference only
+default = { features = [], solve-group = "core" }
+
+
+[tool.pixi.tasks]
+smoke = "python -c \"import torch, torch_geometric; print('torch', torch.__version__); print('pyg', torch_geometric.__version__)\""
+# Inspect checkpoint using weights_only=True (allowlisting EasyDict).
+inspect-ckpt = "python scripts/inspect_ckpt.py ckpt/ZINC-pretrained-255000.pt"
+test-load-ckpt = "python scripts/test_load_ckpt.py"
+
+[tool.basedpyright]
+pythonVersion = "3.10"
+# Tell basedpyright to use the Pixi-managed env instead of guessing .venv
+venvPath = ".pixi/envs"
+venv = "default"
+# What to analyse
+include = ["."]
+# Ignore build artefacts and any stray envs
+exclude = [
+  ".pixi",
+  ".venv",
+  "**/__pycache__",
+  "**/node_modules",
+  "client",
+]
+reportAny = "none"
+reportMissingTypeStubs = "none"
+reportMissingImports = "none"
+reportUnusedCallResult = "none"
+reportExplicitAny = "none"
+reportUnknownMemberType = "none"
+reportUnknownVariableType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownParameterType = "none"
+reportImportCycles = "information"
+reportImplicitStringConcatenation = "none"
+reportCallInDefaultInitializer = "none"
+reportUnnecessaryTypeIgnoreComment = "information"

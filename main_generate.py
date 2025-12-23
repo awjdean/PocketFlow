@@ -76,11 +76,7 @@ if __name__ == '__main__':
     ## Load model
     print('Loading model ...')
     device = args.device
-    ckpt = torch.load(args.ckpt, map_location=device)
-
-    config = ckpt['config']
-    model = PocketFlow(config).to(device)
-    model.load_state_dict(ckpt['model'])
+    model = load_model_from_ckpt(PocketFlow, args.ckpt, device)
     print('Generating molecules ...')
     temperature = [args.atom_temperature, args.bond_temperature]
     # print(args.bond_length_range, type(args.bond_length_range))
