@@ -111,7 +111,7 @@ class AtomFlow(nn.Module):
         sca_focal, vec_focal = compose_features[0][focal_idx], compose_features[1][focal_idx]
         sca_focal, vec_focal = self.net([sca_focal, vec_focal])
 
-        for flow_layer in self.flow_layers:
+        for flow_layer in reversed(self.flow_layers):
             s, t = flow_layer([sca_focal, vec_focal])
             atom_latent = (atom_latent / s.exp()) - t
 
