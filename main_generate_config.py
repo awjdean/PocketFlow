@@ -68,14 +68,14 @@ if __name__ == "__main__":
     if args.name is None:
         args.name = args.pocket.split("/")[-1].split("-")[0]
     """args.pocket =  'pockets/HAT1/HAT1-pocket10-norm-surf.pdb'
-    args.ckpt =  'finetuning_2nd_log/2023-03-01-10-36/ckpt/50000.pt'#'565000.pt'#'./ckpt/255000.pt' 
+    args.ckpt =  'finetuning_2nd_log/2023-03-01-10-36/ckpt/50000.pt'#'565000.pt'#'./ckpt/255000.pt'
     args.choose_max = 1
     args.root_path = 'gen_results_new/'
     args.name = 'HAT1'
     args.num_gen = 100"""
     """
-    args.name = 'HAT1' 
-    args.root_path = 'gen_results_new' 
+    args.name = 'HAT1'
+    args.root_path = 'gen_results_new'
     args.device = 'cuda:0'
     args.focus_threshold = 0.5"""
 
@@ -153,14 +153,17 @@ if __name__ == "__main__":
 'python main_generate.py -pkt {} --ckpt {} -n {} --name {} \
     -root_path {} -d {} -at {} -bt {} --max_atom_num {} -ft {} -cm {} --with_print {}'
 
-python main_generate.py -pkt pockets/METTL16/METTL16-pocket10-norm.pdb --ckpt ../PocketFlow/saved_model/finetuning_new-215000.pt -n 100 --name METTL16 -root_path gen_results -d 0 -at 1 -bt 1 --max_atom_num 35 -ft 0.5 -cm True --with_print True
+python main_generate.py -pkt pockets/METTL16/METTL16-pocket10-norm.pdb
+ --ckpt ../PocketFlow/saved_model/finetuning_new-215000.pt -n 100 --name METTL16 -root_path gen_results -d 0
+  -at 1 -bt 1 --max_atom_num 35 -ft 0.5 -cm True --with_print True
 """
 
 """def make_cmd(para_dict):
-    cmd_temp = 'python main_generate.py -pkt {} --ckpt {} -n {} --name {} --root_path {} -d {} -at {} -bt {} --max_atom_num {} -ft {} -cm {} --with_print {}'
+    cmd_temp = 'python main_generate.py -pkt {} --ckpt {} -n {} --name {}
+     --root_path {} -d {} -at {} -bt {} --max_atom_num {} -ft {} -cm {} --with_print {}'
     cmd = cmd_temp.format(
         para_dict.pkt, para_dict.ckpt, para_dict.num, para_dict.name, para_dict.root_path,
-        para_dict.device, para_dict.atom_temp, para_dict.bond_temp, para_dict.max_atom_num, 
+        para_dict.device, para_dict.atom_temp, para_dict.bond_temp, para_dict.max_atom_num,
         para_dict.focus_threshold, para_dict.choose_max, para_dict.with_print
         )
     return cmd

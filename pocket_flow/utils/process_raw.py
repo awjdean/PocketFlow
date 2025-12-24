@@ -110,7 +110,7 @@ class SplitPocket:
 
             open(pocket_file_name, "w").write(pocket_block)
             open(save_path + f"/{ligand_name}.mol", "w").write(ligand_block)
-        except:
+        except Exception:
             protein_file = self.main_path + self.sample_path + items[3]
             ligand_file = self.main_path + self.sample_path + items[4]
             print("[Exception]", protein_file, ligand_file)
@@ -144,7 +144,7 @@ class SplitPocket:
 
     def __call__(self, np=10):
         pool = Pool(processes=np)
-        data_pool = pool.map(self._do_split, self.types)
+        _data_pool = pool.map(self._do_split, self.types)
         pool.close()
         pool.join()
         print("Done !")

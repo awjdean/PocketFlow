@@ -7,7 +7,7 @@ from .layers import AttentionInteractionBlockVN
 class ContextEncoder(nn.Module):
     def __init__(
         self,
-        hidden_channels=[256, 64],
+        hidden_channels=(256, 64),
         edge_channels=64,
         num_edge_types=4,
         key_channels=128,

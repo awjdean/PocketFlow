@@ -25,8 +25,8 @@ class Generate:
         self,
         model,
         transform,
-        temperature=[1.0, 1.0],
-        atom_type_map=[6, 7, 8, 9, 15, 16, 17, 35, 53],
+        temperature=(1.0, 1.0),
+        atom_type_map=(6, 7, 8, 9, 15, 16, 17, 35, 53),
         num_bond_type=4,
         max_atom_num=35,
         focus_threshold=0.5,
@@ -187,7 +187,6 @@ class Generate:
 
     def bond_generate(self, h_cpx, data, new_pos_to_add, atom_type_emb, atom_idx, rw_mol):
         if atom_idx == 0:
-            is_check = False
             new_edge_idx = torch.empty([2, 0], dtype=torch.long)
             new_bond_type_to_add = torch.empty([0], dtype=torch.long)
         else:
@@ -378,7 +377,7 @@ class Generate:
             mol = data2mol(data)
             modified_mol = modify(mol, max_double_in_6ring=self.max_double_in_6ring)
             return modified_mol, mol
-        except:
+        except Exception:
             mol_ = rw_mol.GetMol()
             print("Invalid mol: ", Chem.MolToSmiles(mol_))
             mol = data2mol(data)
@@ -391,8 +390,8 @@ class Generate:
         verify_dir_exists(out_dir)
         valid_mol = []
         smiles_list = []
-        valid_conuter = 0
-        for i in range(num_gen):
+        valid_counter = 0
+        for _i in range(num_gen):
             data_clone = data.clone().detach()
             out = self.run(data_clone)
             if out:
@@ -400,7 +399,7 @@ class Generate:
             del data_clone
             if mol is not None:
                 # print(len(mol.GetAtoms()))
-                mol.SetProp("_Name", "No_%s-%s" % (valid_conuter, out_dir))
+                mol.SetProp("_Name", f"No_{valid_counter}-{out_dir}")
                 smi = Chem.MolToSmiles(mol)
                 if with_print:
                     print(smi)
@@ -411,7 +410,7 @@ class Generate:
                     smi_writer.write(smi + "\n")
                 smiles_list.append(smi)
                 valid_mol.append(mol)
-                valid_conuter += 1
+                valid_counter += 1
         print(len(smiles_list))
         print(len(set(smiles_list)))
         print(f"Validity: {len(smiles_list) / num_gen:.4f}")

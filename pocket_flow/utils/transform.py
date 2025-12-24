@@ -53,15 +53,16 @@ class TrajCompose(BaseTransform):
 
     def __call__(self, data: Data | HeteroData):
         if isinstance(data, (list, tuple)):
-            l = []
-            for i in data:
+            results = []
+            for item in data:
                 for transform in self.transforms:
-                    traj = transform(i)
-                l += traj
+                    traj = transform(item)
+                results += traj
+            return results
         else:
             for transform in self.transforms:
                 data = transform(data)
-        return data
+            return data
 
     def __repr__(self) -> str:
         args = [f"  {transform}" for transform in self.transforms]
@@ -173,7 +174,7 @@ class FeaturizeProteinAtom:
 
 
 class FeaturizeLigandAtom:
-    def __init__(self, atomic_numbers=[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]):
+    def __init__(self, atomic_numbers=(1, 6, 7, 8, 9, 15, 16, 17, 35, 53)):
         super().__init__()
         # self.atomic_numbers = torch.LongTensor([1,6,7,8,9,15,16,17])  # H C N O F P S Cl
         self.atomic_numbers = torch.LongTensor(atomic_numbers)  # C N O F P S Cl
@@ -248,7 +249,7 @@ class LigandTrajectory:
 
 
 class FocalMaker:
-    def __init__(self, r=4.0, num_work=16, atomic_numbers=[1, 6, 7, 8, 9, 15, 16, 17, 35, 53]) -> None:
+    def __init__(self, r=4.0, num_work=16, atomic_numbers=(1, 6, 7, 8, 9, 15, 16, 17, 35, 53)) -> None:
         self.r = r
         self.num_work = num_work
         self.atomic_numbers = torch.LongTensor(atomic_numbers)

@@ -1,10 +1,16 @@
+import glob
+import gzip
 import os
+import pickle
+from multiprocessing import Pool
 
+import lmdb
 import numpy as np
 import torch
 from rdkit import Chem, RDConfig
 from rdkit.Chem import ChemicalFeatures
 from rdkit.Chem.rdchem import BondType
+from tqdm.auto import tqdm
 
 from pocket_flow.utils import ComplexData, is_in_ring, torchify_dict
 
@@ -26,7 +32,7 @@ ATOM_FAMILIES = [
 ]
 ATOM_FAMILIES_ID = {s: i for i, s in enumerate(ATOM_FAMILIES)}
 BOND_TYPES = {t: i for i, t in enumerate(BondType.names.values())}
-BOND_NAMES = {i: t for i, t in enumerate(BondType.names.keys())}
+BOND_NAMES = dict(enumerate(BondType.names.keys()))
 
 
 empty_pocket_dict = {}
@@ -89,18 +95,10 @@ def parse_sdf_to_dict(rdmol, fake_pokect_dict=empty_pocket_dict):
             protein_dict=torchify_dict(fake_pokect_dict), ligand_dict=torchify_dict(ligand_dict)
         )
         cpx_data = pickle.dumps(cpx_data)
-    except:
+    except Exception:
         cpx_data = None
     return cpx_data
 
-
-import glob
-import gzip
-import pickle
-from multiprocessing import Pool
-
-import lmdb
-from tqdm.auto import tqdm
 
 sdf_path = "./path/to/ZINC/dataset/"
 processed_path = "./pretrain_data/ZINC_PretrainingDataset.lmdb"
@@ -114,7 +112,7 @@ db = lmdb.open(
 )
 index = 0
 index_list = []
-for ix, sdf_supplier in enumerate(tqdm(sdf_list)):
+for _ix, sdf_supplier in enumerate(tqdm(sdf_list)):
     mol_list = list(Chem.ForwardSDMolSupplier(gzip.open(sdf_supplier), removeHs=True))
     torch.multiprocessing.set_sharing_strategy("file_system")
     pool = Pool(processes=16)

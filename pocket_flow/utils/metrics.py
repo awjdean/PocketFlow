@@ -152,7 +152,7 @@ def substructure(mol_lib):
             else:
                 ring_size_statis["sssr"][sssr] = {}
                 ring_size_statis["sssr"][sssr]["num"] = 1
-            ring = mol.GetRingInfo()
+            _ring = mol.GetRingInfo()
             has_ring_size_3 = False
             has_ring_size_4 = False
             has_ring_size_5 = False

@@ -14,6 +14,16 @@ check-toml = { description = "Check TOML files with Tombi linter", run = "tombi 
 fix-toml = { description = "Run Tombi TOML formatter/linter on all TOML files", run = "tombi format" }
 check = { description = "Run all check-* tasks", run = "mise run check-py && mise run check-toml && mise run check-pytype" }
 fix = { description = "Run all fix-* tasks", run = "mise run fix-py && mise run fix-toml" }
+test-gen = { description = "Generate molecules for 1bvr pocket using ZINC pretrained model", run = '''
+pixi run python main_generate.py \
+  -pkt test_samples/test_pocket10/1bvr_C_rec_pocket10-surf.pdb \
+  --ckpt ckpt/ZINC-pretrained-255000.pt \
+  -n 10 \
+  --name 1bvr \
+  -d cpu \
+  --root_path gen_results \
+  --with_print 1
+''' }
 
 [tasks.check-pytype]
 description = "Typecheck python code with basedpyright"

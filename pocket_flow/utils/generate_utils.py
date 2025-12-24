@@ -27,7 +27,7 @@ def add_ligand_atom_to_data(
     element,
     bond_index,
     bond_type,
-    type_map=[1, 6, 7, 8, 9, 15, 16, 17, 35, 53],
+    type_map=(1, 6, 7, 8, 9, 15, 16, 17, 35, 53),
     max_valence_dict=max_valence_dict,
 ):
     data = old_data.clone()
@@ -85,9 +85,9 @@ def add_ligand_atom_to_data(
         )
         bond_index[0, :] = len(data.ligand_context_pos) - 1
         """bond_type = check_double_bond(
-            data.ligand_context_bond_index, 
-            data.ligand_context_bond_type, 
-            bond_index, 
+            data.ligand_context_bond_index,
+            data.ligand_context_bond_type,
+            bond_index,
             bond_type
             )"""
         bond_type = check_valence_is_2(
@@ -165,9 +165,9 @@ def data2mol(data, raise_error=True, sanitize=True):
     # modify
     try:
         rd_mol = modify_submol(rd_mol)
-    except:
+    except Exception as err:
         if raise_error:
-            raise MolReconsError()
+            raise MolReconsError() from err
         else:
             print("MolReconsError")
     # check valid
@@ -256,13 +256,13 @@ def remove_triangle(
     atom_in_place_adjs = [ligand_context_bond_index[1][ligand_context_bond_index[0] == i] for i in new_j]
     L = []
     for j in new_j:
-        l = []
+        matches = []
         for i in atom_in_place_adjs:
             if j in i:
-                l.append(True)
+                matches.append(True)
             else:
-                l.append(False)
-        L.append(l)
+                matches.append(False)
+        L.append(matches)
     adj_mask = torch.LongTensor(L).any(-1)
     if adj_mask.sum() > 0:
         dist = torch.norm(pos_to_add.view(-1, 3) - ligand_context_pos[new_j], dim=-1, p=2)
@@ -275,8 +275,10 @@ def remove_triangle(
 
 
 PATTERNS = [
-    # Chem.MolFromSmarts('[C,N]1~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@1'), # '[R]1~&@[R]~&@[R]~&@[R]~&@[R]~&@[R]~&@1'
-    Chem.MolFromSmarts("[N]1~&@[N]~&@[C]~&@[C]~&@[C]~&@[C]~&@1"),  # '[R]1~&@[R]~&@[R]~&@[R]~&@[R]~&@1'
+    # '[R]1~&@[R]~&@[R]~&@[R]~&@[R]~&@[R]~&@1'
+    # Chem.MolFromSmarts('[C,N]1~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@1'),
+    # '[R]1~&@[R]~&@[R]~&@[R]~&@[R]~&@1'
+    Chem.MolFromSmarts("[N]1~&@[N]~&@[C]~&@[C]~&@[C]~&@[C]~&@1"),
     Chem.MolFromSmarts("[N]1~&@[C]~&@[N]~&@[C]~&@[C]~&@[C]~&@1"),
     Chem.MolFromSmarts("[N]1~&@[C]~&@[C]~&@[N]~&@[C]~&@[C]~&@1"),
     Chem.MolFromSmarts("[N]1~&@[C]~&@[C]~&@[C]~&@[C]~&@[C]~&@1"),
@@ -307,7 +309,6 @@ def modify(mol, max_double_in_6ring=0):
     p1 = Chem.MolFromSmarts("[#6,#7]=[#6]1-[#6,#7]~&@[#6,#7]~&@[#6,#7]~&@[#6,#7]~&@[#6,#7]-1")
     p1_ = Chem.MolFromSmarts("[C,N]=[C]1-[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]-1")
     subs = set(list(mw.GetSubstructMatches(p1)) + list(mw.GetSubstructMatches(p1_)))
-    subs_set_1 = [set(s) for s in subs]
     for sub in subs:
         comb = itertools.combinations(sub, 2)
         # b_list = [(c, mw.GetBondBetweenAtoms(*c)) for c in comb if mw.GetBondBetweenAtoms(*c) is not None]
@@ -371,7 +372,6 @@ def modify(mol, max_double_in_6ring=0):
     p_ = Chem.MolFromSmarts("[C,N]1~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@1")
     Chem.GetSSSR(mw)
     subs = set(list(mw.GetSubstructMatches(p)) + list(mw.GetSubstructMatches(p_)))
-    subs_set_3 = [set(s) for s in subs]
     for sub in subs:
         pass_sub = False
         if subs_set_2:
@@ -410,7 +410,7 @@ def modify(mol, max_double_in_6ring=0):
         rd_conf.SetAtomPosition(i, rd_coords)
     rd_mol.AddConformer(rd_conf)
 
-    for i, bond in enumerate(mw.GetBonds()):
+    for _i, bond in enumerate(mw.GetBonds()):
         bt = bond.GetBondType()
         node_i = bond.GetBeginAtomIdx()
         node_j = bond.GetEndAtomIdx()
@@ -424,7 +424,7 @@ def modify(mol, max_double_in_6ring=0):
             Chem.Kekulize(out_mol)
             del mol_copy
             return out_mol
-        except:
+        except Exception:
             del mol
             return mol_copy
     else:
@@ -438,9 +438,9 @@ def save_sdf(mol_list, save_name="mol_gen.sdf"):
     for i, mol in enumerate(mol_list):
         mw = Descriptors.ExactMolWt(mol)
         logp = Descriptors.MolLogP(mol)
-        mol.SetProp("MW", "%.2f" % (mw))
-        mol.SetProp("LOGP", "%.2f" % (logp))
-        mol.SetProp("_Name", "No_%s" % (i))
+        mol.SetProp("MW", f"{mw:.2f}")
+        mol.SetProp("LOGP", f"{logp:.2f}")
+        mol.SetProp("_Name", f"No_{i}")
         Chem.Kekulize(mol)
         writer.write(mol)
     writer.close()

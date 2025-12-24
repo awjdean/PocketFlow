@@ -136,7 +136,7 @@ class LoadDataset(Dataset):
 
 class CrossDocked2020:
     def __init__(
-        self, raw_path, index_path, unexpected_sample=[], atomic_numbers=[6, 7, 8, 9, 15, 16, 17, 35, 53]
+        self, raw_path, index_path, unexpected_sample=(), atomic_numbers=(6, 7, 8, 9, 15, 16, 17, 35, 53)
     ):
         self.raw_path = raw_path
         self.file_dirname = os.path.dirname(raw_path)
@@ -223,7 +223,7 @@ class CrossDocked2020:
                     continue
                 elif items[1] in self.unexpected_sample:
                     continue
-                elif Chem.MolFromMolFile(items[1]) != None:
+                elif Chem.MolFromMolFile(items[1]) is not None:
                     val_raw_files.append(items)
                 else:
                     exception_list.append(items)

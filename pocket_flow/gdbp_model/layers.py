@@ -20,10 +20,12 @@ class GDBLinear(Module):
             sca_bottleneck = bottleneck[0]
             vec_bottleneck = bottleneck[1]
         assert in_vector % vec_bottleneck == 0, (
-            f"Input channel of vector ({in_vector}) must be divisible with bottleneck factor ({vec_bottleneck})"
+            f"Input channel of vector ({in_vector}) must be divisible"
+            + f" with bottleneck factor ({vec_bottleneck})"
         )
         assert in_scalar % sca_bottleneck == 0, (
-            f"Input channel of vector ({in_scalar}) must be divisible with bottleneck factor ({sca_bottleneck})"
+            f"Input channel of vector ({in_scalar}) must be divisible"
+            + f" with bottleneck factor ({sca_bottleneck})"
         )
         if sca_bottleneck > 1:
             self.sca_hidden_dim = in_scalar // sca_bottleneck
@@ -301,8 +303,6 @@ class AttentionInteractionBlockVN(Module):
             edge_index: (2, E).
             edge_attr:  (E, H)
         """
-        scalar, vector = x
-        N = scalar.size(0)
         row, col = edge_index  # (E,) , (E,)
 
         # Compute edge features

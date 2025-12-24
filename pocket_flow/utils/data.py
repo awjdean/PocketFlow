@@ -127,7 +127,7 @@ class ProteinLigandDataLoader(DataLoader):
         dataset,
         batch_size=1,
         shuffle=False,
-        follow_batch=["ligand_element", "protein_element"],
+        follow_batch=("ligand_element", "protein_element"),
         **kwargs,
     ):
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, follow_batch=follow_batch, **kwargs)

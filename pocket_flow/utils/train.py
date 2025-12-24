@@ -210,8 +210,8 @@ class Experiment:
         schedule_key="loss",
         num_workers=0,
         pin_memory=False,
-        follow_batch=[],
-        exclude_keys=[],
+        follow_batch=(),
+        exclude_keys=(),
         collate_fn=None,
         max_edge_num_in_batch=900000,
     ):
@@ -269,10 +269,10 @@ class Experiment:
             batch.cpx_pos = batch.cpx_pos + cpx_noise
             if batch.cpx_edge_index.size(1) > max_edge_num_in_batch:
                 continue
-            out_dict = self._train_step(batch, it=step, print_log=print_log)
+            _out_dict = self._train_step(batch, it=step, print_log=print_log)
             if step % valid_per_step == 0 or step == num_step:
                 if self.num_valid_data:
-                    val_loss = self.validate(
+                    _val_loss = self.validate(
                         self.n_iter_valid, step, schedule_key=schedule_key, print_log=print_log
                     )
                 # torch.save(self.model.state_dict(), self.logdir+'/model.pth')

@@ -69,7 +69,8 @@ class PositionEncoder(Module):
         y_root_sca, y_root_vec = self.root_lin([atom_type_emb, root_vec_ij])
         x = [y_root_sca, y_root_vec]
 
-        # node_attr_ctx_j = [node_attr_ctx_[edge_index_q_cps_knn[1]] for node_attr_ctx_ in node_attr_ctx]  # (A, H)
+        # node_attr_ctx_j = [node_attr_ctx_[edge_index_q_cps_knn[1]]
+        #  for node_attr_ctx_ in node_attr_ctx]  # (A, H)
         h_q = self.message_module(
             node_attr_compose, edge_ij, edge_index_q_cps_knn[1], dist_ij, annealing=annealing
         )
@@ -142,9 +143,9 @@ class BondFlow(Module):
         node_attr_compose,
         edge_index_q_cps_knn,
         atom_type_emb,
-        index_real_cps_edge_for_atten=[],
-        tri_edge_index=[],
-        tri_edge_feat=[],
+        index_real_cps_edge_for_atten=(),
+        tri_edge_index=(),
+        tri_edge_feat=(),
         annealing=False,
     ):
         y = self.pos_encoder(
@@ -198,9 +199,9 @@ class BondFlow(Module):
         node_attr_compose,
         edge_index_q_cps_knn,
         atom_type_emb,
-        index_real_cps_edge_for_atten=[],
-        tri_edge_index=[],
-        tri_edge_feat=[],
+        index_real_cps_edge_for_atten=(),
+        tri_edge_index=(),
+        tri_edge_feat=(),
         annealing=False,
     ):
         y = self.pos_encoder(

@@ -9,7 +9,7 @@ from .residues_base import RESIDUES_TOPO
 
 try:
     import pymol
-except:
+except ImportError:
     print("we can not compute the atoms on the surface of protein, because pymol can not be imported")
     pass
 # from .BaseFeatures import Mol2Graph, RESIDUE_GRAPH_WITHOUT_H, RESIDUE_GRAPH_WITH_H
@@ -100,7 +100,14 @@ class Atom:
 
     @property
     def to_string(self):
-        fmt = "{:6s}{:5d} {:^4s}{:1s}{:3s} {:1s}{:4d}{:1s}   {:8.3f}{:8.3f}{:8.3f}{:6.2f}{:6.2f}        {:<2s}{:2s}"  # https://cupnet.net/pdb-format/
+        # https://cupnet.net/pdb-format/
+        fmt = (  # record, serial, name, alt, res, chain, seq, insert
+            "{:6s}{:5d} {:^4s}{:1s}{:3s} {:1s}{:4d}{:1s}"
+            # x, y, z, occupancy, temp_factor
+            + "   {:8.3f}{:8.3f}{:8.3f}{:6.2f}{:6.2f}"
+            # segment_id, element, charge
+            + "        {:<2s}{:2s}"
+        )
         out = fmt.format(
             "ATOM",
             self.idx,
@@ -131,7 +138,10 @@ class Atom:
         }
 
     def __repr__(self):
-        info = f"name={self.name}, index={self.idx}, res={self.res_name + str(self.res_idx)}, chain={self.chain}, is_disorder={self.is_disorder}"
+        info = (
+            f"name={self.name}, index={self.idx}, res={self.res_name + str(self.res_idx)},"
+            + f" chain={self.chain}, is_disorder={self.is_disorder}"
+        )
         return f"{self.__class__.__name__}({info})"
 
 
@@ -211,7 +221,10 @@ class Residue:
         return self.get_coords.mean(axis=0)
 
     def __repr__(self):
-        info = f"name={self.name}, index={self.idx}, chain={self.chain}, is_disorder={self.is_disorder}, is_perfect={self.is_perfect}"
+        info = (
+            f"name={self.name}, index={self.idx}, chain={self.chain},"
+            + f" is_disorder={self.is_disorder}, is_perfect={self.is_perfect}"
+        )
         return f"{self.__class__.__name__}({info})"
 
 
@@ -573,7 +586,7 @@ ATOM_FAMILIES = [
 ]
 ATOM_FAMILIES_ID = {s: i for i, s in enumerate(ATOM_FAMILIES)}
 BOND_TYPES = {t: i for i, t in enumerate(BondType.names.values())}
-BOND_NAMES = {i: t for i, t in enumerate(BondType.names.keys())}
+BOND_NAMES = dict(enumerate(BondType.names.keys()))
 
 
 def is_in_ring(mol):
