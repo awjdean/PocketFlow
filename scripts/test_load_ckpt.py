@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import torch
 from easydict import EasyDict
 
+from pocket_flow import PocketFlow
 from pocket_flow.utils.model_io import load_ckpt
 
 
@@ -43,6 +44,21 @@ def main() -> int:
         print("✓ config is EasyDict (allowlisting path exercised)")
 
     print("✓ Loaded checkpoint successfully")
+
+    # Test load_state_dict with strict=False and check for missing/unexpected keys
+    print("Testing model.load_state_dict with strict=False...")
+    config = obj["config"]
+    model = PocketFlow(config).to("cpu")
+    missing, unexpected = model.load_state_dict(obj["model"], strict=False)
+
+    if missing:
+        print(f"✗ Missing keys: {missing}")
+        return 1
+    if unexpected:
+        print(f"✗ Unexpected keys: {unexpected}")
+        return 1
+
+    print("✓ No missing or unexpected keys in checkpoint")
     print("✓ All checks passed")
     return 0
 

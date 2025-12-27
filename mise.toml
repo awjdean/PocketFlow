@@ -8,7 +8,7 @@ tombi = "0.7"
 # Inference (default env)
 install = "pixi install --locked"
 smoke = "pixi run smoke"
-test-load-ckpt = "pixi run test-load-ckpt"
+test-load = "pixi run test-load-ckpt"
 check-py = { description = "Check python code with ruff", run = "ruff check . && ruff format --check ." }
 fix-py = { description = "Fix Python code with Ruff", run = "ruff format . && ruff check --fix ." }
 check-toml = { description = "Check TOML files with Tombi linter", run = "tombi lint" }
