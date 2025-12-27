@@ -159,7 +159,8 @@ class ContextEncoder(nn.Module):
             and ``(N, F_vec, 3)``.
         """
         assert edge_feature.size(-1) == self.num_edge_types, (
-            f"edge_feature.size(-1) ({edge_feature.size(-1)}) must equal num_edge_types ({self.num_edge_types})"
+            f"edge_feature.size(-1) ({edge_feature.size(-1)}) must "
+            + f"equal num_edge_types ({self.num_edge_types})"
         )
         edge_vector: Tensor = pos[edge_index[0]] - pos[edge_index[1]]
         edge_dist: Tensor = torch.norm(edge_vector, dim=-1, p=2)
