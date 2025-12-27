@@ -66,8 +66,9 @@ class ContextEncoder(nn.Module):
 
     hidden_channels: tuple[int, int]
     edge_channels: int
-    key_channels: int
-    num_heads: int
+    num_edge_types: int
+    _key_channels: int
+    _num_heads: int
     num_interactions: int
     k: int
     cutoff: float
@@ -89,11 +90,16 @@ class ContextEncoder(nn.Module):
         super().__init__()
         self.hidden_channels = hidden_channels
         self.edge_channels = edge_channels
-        self.key_channels = key_channels  # stored for compatibility; unused by this module
-        self.num_heads = num_heads  # stored for introspection; used to construct blocks
+        self.num_edge_types = num_edge_types
+        self._key_channels = key_channels  # unused; kept for compatibility
+        self._num_heads = num_heads  # unused; kept for introspection
         self.num_interactions = num_interactions
         self.k = k
         self.cutoff = cutoff
+
+        assert self.edge_channels >= self.num_edge_types, (
+            f"edge_channels ({self.edge_channels}) must be >= num_edge_types ({self.num_edge_types})"
+        )
 
         self.interactions = nn.ModuleList()
         for _ in range(num_interactions):
@@ -152,6 +158,9 @@ class ContextEncoder(nn.Module):
             Updated node features ``(scalar, vector)`` with shapes ``(N, F_sca)``
             and ``(N, F_vec, 3)``.
         """
+        assert edge_feature.size(-1) == self.num_edge_types, (
+            f"edge_feature.size(-1) ({edge_feature.size(-1)}) must equal num_edge_types ({self.num_edge_types})"
+        )
         edge_vector: Tensor = pos[edge_index[0]] - pos[edge_index[1]]
         edge_dist: Tensor = torch.norm(edge_vector, dim=-1, p=2)
         h: list[Tensor] = list(node_attr)
