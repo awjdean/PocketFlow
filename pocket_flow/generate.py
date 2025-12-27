@@ -5,16 +5,16 @@ from rdkit import Chem, RDLogger
 from torch_geometric.nn import knn, radius
 
 from .gdbp_model import embed_compose
-from .utils import (
+from .utils.generate_utils import (
     add_ligand_atom_to_data,
     check_alert_structures,
     check_valency,
     data2mol,
-    get_tri_edges,
     modify,
-    substructure,
-    verify_dir_exists,
 )
+from .utils.metrics import substructure
+from .utils.train import verify_dir_exists
+from .utils.transform_utils import get_tri_edges
 
 RDLogger.DisableLog("rdApp.*")
 max_valence_dict = {1: 1, 6: 4, 7: 3, 8: 2, 9: 1, 15: 5, 16: 6, 17: 1, 35: 1, 53: 1}

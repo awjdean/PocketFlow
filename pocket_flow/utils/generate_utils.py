@@ -1,13 +1,47 @@
+"""
+Utilities for ligand graph growth and RDKit molecule reconstruction.
+
+This module contains helper functions used during generation to:
+
+- Incrementally append atoms/bonds to a `torch_geometric.data.Data` object that
+  represents the ligand "context" graph used by the model.
+- Convert a generated ligand context graph back into an RDKit molecule with 3D
+  coordinates.
+- Apply a few chemistry-specific postprocessing rules (e.g., preventing small
+  triangles, reducing overly aggressive double bonds, and stabilizing certain
+  charged substructures).
+
+Conventions used throughout:
+
+- Element identities are typically represented by atomic numbers (e.g., 6 for C),
+  but `add_ligand_atom_to_data` expects `element` to be an *index* into
+  `ELEMENT_TYPE_MAP` (unless you pass a custom `type_map`).
+- Bond orders are encoded as integers:
+  `1` (single), `2` (double), `3` (triple), and `12` (aromatic).
+- The `Data` object is expected to carry several ligand context fields, such as:
+  `ligand_context_pos`, `ligand_context_element`, `ligand_context_bond_index`,
+  `ligand_context_bond_type`, and `ligand_context_feature_full`.
+"""
+
+from __future__ import annotations
+
 import copy
 import itertools
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from rdkit import Chem, Geometry
 from rdkit.Chem import Descriptors
+from rdkit.Chem.rdchem import Mol
 
-max_valence_dict = {
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from torch_geometric.data import Data
+
+MAX_VALENCE_DICT: dict[int, torch.Tensor] = {
     6: torch.LongTensor([4]),
     7: torch.LongTensor([3]),
     8: torch.LongTensor([2]),
@@ -20,16 +54,50 @@ max_valence_dict = {
     1: torch.LongTensor([1]),
 }
 
+ELEMENT_TYPE_MAP: tuple[int, ...] = (1, 6, 7, 8, 9, 15, 16, 17, 35, 53)
+
 
 def add_ligand_atom_to_data(
-    old_data,
-    pos,
-    element,
-    bond_index,
-    bond_type,
-    type_map=(1, 6, 7, 8, 9, 15, 16, 17, 35, 53),
-    max_valence_dict=max_valence_dict,
-):
+    old_data: Data,
+    pos: torch.Tensor,
+    element: torch.Tensor,
+    bond_index: torch.Tensor,
+    bond_type: torch.Tensor,
+    type_map: tuple[int, ...] = ELEMENT_TYPE_MAP,
+    max_valence_dict: dict[int, torch.Tensor] = MAX_VALENCE_DICT,
+) -> Data:
+    """
+    Append a new ligand atom (and optional bonds) to a ligand context `Data`.
+
+    The input `old_data` is cloned and the returned `Data` contains:
+
+    - Updated `ligand_context_pos` with the new atom's 3D position.
+    - Updated `ligand_context_feature_full` with a one-hot element feature plus
+      bookkeeping features (neighbor count, valence, and bond-count buckets).
+    - Updated `ligand_context_element`, `ligand_context_bond_index`,
+      `ligand_context_bond_type`, `ligand_context_valence`, and `max_atom_valence`.
+
+    Notes:
+        - `element` is interpreted as an index into `type_map` (not an atomic
+          number). The stored `ligand_context_element` uses atomic numbers.
+        - If `bond_type` is non-empty, the helper applies heuristics to avoid
+          forming triangles and to reduce bond orders that would likely violate
+          simple valence rules.
+
+    Args:
+        old_data: Original ligand context graph. It is not mutated.
+        pos: Position of the new atom, shape `(3,)`.
+        element: Element *index* into `type_map`, scalar tensor.
+        bond_index: Candidate edges from the new atom to existing atoms,
+            shape `(2, E)` (the first row is overwritten to point to the new atom).
+        bond_type: Candidate bond orders for `bond_index`, shape `(E,)`.
+        type_map: Mapping from model element indices to atomic numbers.
+        max_valence_dict: Mapping from atomic number to a 1D tensor containing
+            that element's maximum allowed valence.
+
+    Returns:
+        A cloned `Data` with the new atom/bonds incorporated into the ligand context.
+    """
     data = old_data.clone()
     if "max_atom_valence" not in data.__dict__["_store"]:
         data.max_atom_valence = torch.empty(0, dtype=torch.long)
@@ -66,11 +134,13 @@ def add_ligand_atom_to_data(
     idx_num_of_bonds = idx_valence + 1
 
     # add type of new atom to context
-    element = torch.LongTensor([type_map[element.item()]])
+    element_idx = int(element.item())
+    element = torch.LongTensor([type_map[element_idx]])
     data.ligand_context_element = torch.cat(
         [data.ligand_context_element, element.view(1).to(data.ligand_context_element)]
     )
-    max_new_atom_valence = max_valence_dict[element.item()].to(data.max_atom_valence)
+    element_type = int(element.item())
+    max_new_atom_valence = max_valence_dict[element_type].to(data.max_atom_valence)
     data.max_atom_valence = torch.cat([data.max_atom_valence, max_new_atom_valence])
 
     # change the feature of new atom to context according to ligand context
@@ -84,12 +154,6 @@ def add_ligand_atom_to_data(
             bond_type,
         )
         bond_index[0, :] = len(data.ligand_context_pos) - 1
-        """bond_type = check_double_bond(
-            data.ligand_context_bond_index,
-            data.ligand_context_bond_type,
-            bond_index,
-            bond_type
-            )"""
         bond_type = check_valence_is_2(
             bond_index, bond_type, data.ligand_context_element, data.ligand_context_valence
         )
@@ -131,11 +195,39 @@ def add_ligand_atom_to_data(
     return data
 
 
-def data2mol(data, raise_error=True, sanitize=True):
-    element = data.ligand_context_element.clone().cpu().tolist()
-    bond_index = data.ligand_context_bond_index.clone().cpu().tolist()
-    bond_type = data.ligand_context_bond_type.clone().cpu().tolist()
-    pos = data.ligand_context_pos.clone().cpu().tolist()
+def data2mol(data: Data, raise_error: bool = True, sanitize: bool = True) -> Mol:
+    """
+    Reconstruct an RDKit molecule from a ligand context graph.
+
+    The function reads ligand context attributes from `data`, creates an RDKit
+    `RWMol` with a 3D conformer, adds bonds according to integer bond types, and
+    then performs light postprocessing:
+
+    - `modify_submol` to assign charges for a specific substructure.
+    - A SMILES roundtrip to validate basic chemistry.
+    - Optional sanitization (with Kekulization/aromaticity handling).
+
+    Args:
+        data: A `torch_geometric.data.Data` object with ligand context fields:
+            `ligand_context_element`, `ligand_context_bond_index`,
+            `ligand_context_bond_type`, and `ligand_context_pos`.
+        raise_error: If True, raise `MolReconsError` on reconstruction failure;
+            otherwise print a message and return the best-effort molecule.
+        sanitize: If True, run `Chem.SanitizeMol` with a relaxed sanitization mask
+            (Kekulization/aromaticity are handled separately).
+
+    Returns:
+        An RDKit `Mol` with 3D coordinates.
+
+    Raises:
+        MolReconsError: If the reconstructed molecule fails a SMILES roundtrip and
+            `raise_error=True`.
+        ValueError: If an unknown bond order integer is encountered.
+    """
+    element: list[int] = data.ligand_context_element.clone().cpu().tolist()
+    bond_index: list[list[int]] = data.ligand_context_bond_index.clone().cpu().tolist()
+    bond_type: list[int] = data.ligand_context_bond_type.clone().cpu().tolist()
+    pos: list[list[float]] = data.ligand_context_pos.clone().cpu().tolist()
     n_atoms = len(pos)
     rd_mol = Chem.RWMol()
     rd_conf = Chem.Conformer(n_atoms)
@@ -147,8 +239,7 @@ def data2mol(data, raise_error=True, sanitize=True):
         rd_coords = Geometry.Point3D(*pos[i])
         rd_conf.SetAtomPosition(i, rd_coords)
     rd_mol.AddConformer(rd_conf)
-    # add atoms and coordinates
-    # add atoms and coordinates
+    # add bonds
     for i, type_this in enumerate(bond_type):
         node_i, node_j = bond_index[0][i], bond_index[1][i]
         if node_i < node_j:
@@ -161,14 +252,14 @@ def data2mol(data, raise_error=True, sanitize=True):
             elif type_this == 12:
                 rd_mol.AddBond(node_i, node_j, Chem.BondType.AROMATIC)
             else:
-                raise Exception(f"unknown bond order {type_this}")
+                raise ValueError(f"unknown bond order {type_this}")
     # modify
-    try:
+    if raise_error:
         rd_mol = modify_submol(rd_mol)
-    except Exception as err:
-        if raise_error:
-            raise MolReconsError() from err
-        else:
+    else:
+        try:
+            rd_mol = modify_submol(rd_mol)
+        except Exception:
             print("MolReconsError")
     # check valid
     rd_mol_check = Chem.MolFromSmiles(Chem.MolToSmiles(rd_mol))
@@ -178,15 +269,30 @@ def data2mol(data, raise_error=True, sanitize=True):
         else:
             print("MolReconsError")
     rd_mol = rd_mol.GetMol()
-    if 12 in bond_type:  # mol may directlu come from ture mols and contains aromatic bonds
+    if 12 in bond_type:  # mol may directly come from true mols and contains aromatic bonds
         Chem.Kekulize(rd_mol, clearAromaticFlags=True)
     if sanitize:
         Chem.SanitizeMol(rd_mol, Chem.SANITIZE_ALL ^ Chem.SANITIZE_KEKULIZE ^ Chem.SANITIZE_SETAROMATICITY)
-    # rd_mol = modify(rd_mol)
     return rd_mol
 
 
-def modify_submol(mol):  # modify mols containing C=N(C)O
+def modify_submol(mol: Chem.RWMol) -> Chem.RWMol:
+    """
+    Assign formal charges for the substructure `C=N(C)O`.
+
+    RDKit sanitization can fail or assign undesired valences for some generated
+    fragments. This helper detects occurrences of the SMARTS `C=N(C)O` (without
+    sanitizing) and sets charges to the zwitterionic form:
+
+    - N becomes `+1`
+    - O becomes `-1`
+
+    Args:
+        mol: Editable RDKit molecule.
+
+    Returns:
+        The same `RWMol` with formal charges updated in-place.
+    """
     submol = Chem.MolFromSmiles("C=N(C)O", sanitize=False)
     sub_fragments = mol.GetSubstructMatches(submol)
     for fragment in sub_fragments:
@@ -199,10 +305,25 @@ def modify_submol(mol):  # modify mols containing C=N(C)O
 
 
 class MolReconsError(Exception):
+    """Raised when an RDKit molecule cannot be reconstructed from a graph."""
+
     pass
 
 
-def add_context(data):
+def add_context(data: Data) -> Data:
+    """
+    Populate ligand context fields from ligand fields.
+
+    This is a convenience function used when the initial "context" is the full
+    ligand graph (e.g., for evaluation or for bootstrapping generation).
+
+    Args:
+        data: A `Data` object with ligand fields: `ligand_pos`, `ligand_element`,
+            `ligand_bond_index`, and `ligand_bond_type`.
+
+    Returns:
+        The same `Data` object with `ligand_context_*` fields set.
+    """
     data.ligand_context_pos = data.ligand_pos
     data.ligand_context_element = data.ligand_element
     data.ligand_context_bond_index = data.ligand_bond_index
@@ -210,7 +331,20 @@ def add_context(data):
     return data
 
 
-def check_valency(mol):
+def check_valency(mol: Mol) -> bool:
+    """
+    Check whether an RDKit molecule has acceptable valence properties.
+
+    This runs a limited RDKit sanitization (`SANITIZE_PROPERTIES`), which is
+    commonly used as a quick valency/chemistry sanity check without fully
+    rewriting aromaticity or Kekulization.
+
+    Args:
+        mol: RDKit molecule to check.
+
+    Returns:
+        True if the sanitization step succeeds, otherwise False.
+    """
     try:
         Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_PROPERTIES)
         return True
@@ -219,8 +353,31 @@ def check_valency(mol):
 
 
 def check_double_bond(
-    ligand_context_bond_index, ligand_context_bond_type, bond_index_to_add, bond_type_to_add
-):
+    ligand_context_bond_index: torch.Tensor,
+    ligand_context_bond_type: torch.Tensor,
+    bond_index_to_add: torch.Tensor,
+    bond_type_to_add: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Reduce proposed bond orders when the target atom already has a double bond.
+
+    For each destination atom in `bond_index_to_add[1]`, this checks whether the
+    existing context already contains at least one double bond incident to that
+    atom (as represented in `ligand_context_bond_index`/`bond_type`). If so, and
+    the proposed bond order is >= 2, the proposed bond order is reduced by 1.
+
+    This is a heuristic intended to lower the rate of obvious over-valence in
+    generated molecules.
+
+    Args:
+        ligand_context_bond_index: Existing context edges, shape `(2, E_ctx)`.
+        ligand_context_bond_type: Existing context bond orders, shape `(E_ctx,)`.
+        bond_index_to_add: Proposed edges to add, shape `(2, E_new)`.
+        bond_type_to_add: Proposed bond orders for `bond_index_to_add`, shape `(E_new,)`.
+
+    Returns:
+        Potentially adjusted `bond_type_to_add`, shape `(E_new,)`.
+    """
     bond_type_in_place = [
         ligand_context_bond_type[ix == ligand_context_bond_index[0]] for ix in bond_index_to_add[1]
     ]
@@ -231,7 +388,36 @@ def check_double_bond(
     return bond_type_to_add
 
 
-def check_valence_is_2(bond_index_to_add, bond_type_to_add, ligand_context_element, ligand_context_valence):
+def check_valence_is_2(
+    bond_index_to_add: torch.Tensor,
+    bond_type_to_add: torch.Tensor,
+    ligand_context_element: torch.Tensor,
+    ligand_context_valence: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Reduce proposed bond orders when connecting carbon-to-carbon at high valence.
+
+    If the newly added atom (last element in `ligand_context_element`) is carbon,
+    then for each proposed neighbor:
+
+    - If the neighbor is also carbon,
+    - and the neighbor already has valence >= 2 (according to `ligand_context_valence`),
+    - and the proposed bond order is >= 2,
+
+    then the proposed bond order is reduced by 1.
+
+    This is a targeted heuristic to avoid building unrealistic C=C or C#C bonds
+    onto already "saturated" carbon atoms during incremental generation.
+
+    Args:
+        bond_index_to_add: Proposed edges to add, shape `(2, E_new)`.
+        bond_type_to_add: Proposed bond orders, shape `(E_new,)`.
+        ligand_context_element: Context atomic numbers, shape `(N_ctx,)`.
+        ligand_context_valence: Context valence accumulator, shape `(N_ctx,)`.
+
+    Returns:
+        Potentially adjusted `bond_type_to_add`, shape `(E_new,)`.
+    """
     atom_type_to_add = ligand_context_element[-1]
     new_atom_type_is_C = (atom_type_to_add == 6).view(-1)
     if new_atom_type_is_C:
@@ -245,18 +431,42 @@ def check_valence_is_2(bond_index_to_add, bond_type_to_add, ligand_context_eleme
 
 
 def remove_triangle(
-    pos_to_add,
-    ligand_context_pos,
-    ligand_context_bond_index,
-    ligand_context_bond_type,
-    bond_index_to_add,
-    bond_type_to_add,
-):
+    pos_to_add: torch.Tensor,
+    ligand_context_pos: torch.Tensor,
+    ligand_context_bond_index: torch.Tensor,
+    _ligand_context_bond_type: torch.Tensor,
+    bond_index_to_add: torch.Tensor,
+    bond_type_to_add: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Prevent adding multiple bonds that would create a short triangle.
+
+    When the new atom is connected to multiple existing atoms, it is possible
+    that two (or more) of those target atoms are already connected to each
+    other in the existing context. Adding both bonds would then form a
+    three-membered ring (triangle), which is rarely chemically plausible for
+    typical drug-like ligands.
+
+    This heuristic detects that situation and removes *one* of the proposed
+    bonds: it drops the bond whose target atom is farthest from the new atom
+    (based on Euclidean distance in `ligand_context_pos`).
+
+    Args:
+        pos_to_add: Position of the new atom, shape `(3,)`.
+        ligand_context_pos: Positions of existing context atoms, shape `(N_ctx, 3)`.
+        ligand_context_bond_index: Existing context edges, shape `(2, E_ctx)`.
+        _ligand_context_bond_type: Unused (kept for call-site signature symmetry).
+        bond_index_to_add: Proposed edges to add, shape `(2, E_new)`.
+        bond_type_to_add: Proposed bond orders, shape `(E_new,)`.
+
+    Returns:
+        A tuple `(bond_index_to_add, bond_type_to_add)` with at most one edge removed.
+    """
     new_j = bond_index_to_add[1]
     atom_in_place_adjs = [ligand_context_bond_index[1][ligand_context_bond_index[0] == i] for i in new_j]
-    L = []
+    L: list[list[bool]] = []
     for j in new_j:
-        matches = []
+        matches: list[bool] = []
         for i in atom_in_place_adjs:
             if j in i:
                 matches.append(True)
@@ -274,17 +484,15 @@ def remove_triangle(
     return bond_index_to_add, bond_type_to_add
 
 
-PATTERNS = [
-    # '[R]1~&@[R]~&@[R]~&@[R]~&@[R]~&@[R]~&@1'
-    # Chem.MolFromSmarts('[C,N]1~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@1'),
-    # '[R]1~&@[R]~&@[R]~&@[R]~&@[R]~&@1'
+PATTERNS: list[Mol | None] = [
     Chem.MolFromSmarts("[N]1~&@[N]~&@[C]~&@[C]~&@[C]~&@[C]~&@1"),
     Chem.MolFromSmarts("[N]1~&@[C]~&@[N]~&@[C]~&@[C]~&@[C]~&@1"),
     Chem.MolFromSmarts("[N]1~&@[C]~&@[C]~&@[N]~&@[C]~&@[C]~&@1"),
     Chem.MolFromSmarts("[N]1~&@[C]~&@[C]~&@[C]~&@[C]~&@[C]~&@1"),
     Chem.MolFromSmarts("[C]1~&@[C]~&@[C]~&@[C]~&@[C]~&@[C]~&@1"),
 ]
-PATTERNS_1 = [
+
+PATTERNS_1: list[list[Mol | None]] = [
     [
         Chem.MolFromSmarts("[#6,#7,#8]-[#7]1~&@[#6,#7]~&@[#6,#7]~&@[#6,#7]~&@[#6,#7]~&@[#6,#7]~&@1"),
         Chem.MolFromSmarts("[C,N,O]-[N]1~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@1"),
@@ -295,14 +503,38 @@ PATTERNS_1 = [
         ),
         Chem.MolFromSmarts("[C,N,O]-[C]1(-[C,N,O])~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@1"),
     ],
-    # Chem.MolFromSmarts('[C,N,O]-[N]1~&@[C]~&@[C]~&@[N]~&@[C]~&@[C]-1'),
-    # Chem.MolFromSmarts('[C,N,O]-[N]1~&@[C]~&@[C]~&@[C]~&@[C]~&@[C]-1'),
 ]
-MAX_VALENCE = {"C": 4, "N": 3}
+
+MAX_VALENCE: dict[str, int] = {"C": 4, "N": 3}
 
 
-def modify(mol, max_double_in_6ring=0):
-    # atoms = mol.GetAtoms()
+def modify(mol: Mol, max_double_in_6ring: int = 0) -> Mol:
+    """
+    Apply bond-order/aromaticity heuristics to stabilize generated molecules.
+
+    The generation process can produce chemically awkward assignments of double
+    bonds/aromaticity in six-membered rings. This function applies a series of
+    SMARTS-based rules to:
+
+    - Limit the number of explicit double bonds in 6-member rings
+      (`max_double_in_6ring`).
+    - Convert certain non-ring double bonds to single bonds in specific motifs.
+    - Mark some rings as aromatic when they contain too many double bonds and
+      none of the atoms are fully saturated SP3 at max valence.
+
+    The function preserves 3D coordinates by rebuilding an output molecule from
+    the modified `RWMol` and copying its conformer positions.
+
+    Args:
+        mol: Input RDKit molecule.
+        max_double_in_6ring: Maximum number of explicit double bonds allowed in a
+            six-membered ring before heuristics reduce/convert bond orders.
+
+    Returns:
+        A potentially modified RDKit `Mol`. If postprocessing produces an invalid
+        molecule (SMILES roundtrip or Kekulization fails), the original molecule
+        is returned.
+    """
     mol_copy = copy.deepcopy(mol)
     mw = Chem.RWMol(mol)
 
@@ -311,10 +543,9 @@ def modify(mol, max_double_in_6ring=0):
     subs = set(list(mw.GetSubstructMatches(p1)) + list(mw.GetSubstructMatches(p1_)))
     for sub in subs:
         comb = itertools.combinations(sub, 2)
-        # b_list = [(c, mw.GetBondBetweenAtoms(*c)) for c in comb if mw.GetBondBetweenAtoms(*c) is not None]
         change_double = False
         r_b_double = 0
-        b_list = []
+        b_list: list[tuple[tuple[int, int], str, bool]] = []
         for ix, c in enumerate(comb):
             b = mw.GetBondBetweenAtoms(*c)
             if ix == 0:
@@ -343,14 +574,15 @@ def modify(mol, max_double_in_6ring=0):
                     mw.AddBond(*b[0], Chem.rdchem.BondType.SINGLE)
                     break
 
-    # p2 = Chem.MolFromSmarts('[C,N,O]-[N]1~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]-1')
     for p2 in PATTERNS_1:
         Chem.GetSSSR(mw)
         subs2 = set(list(mw.GetSubstructMatches(p2[0])) + list(mw.GetSubstructMatches(p2[1])))
         for sub in subs2:
             comb = itertools.combinations(sub, 2)
-            b_list = [(c, mw.GetBondBetweenAtoms(*c)) for c in comb if mw.GetBondBetweenAtoms(*c) is not None]
-            for b in b_list:
+            b_list_2 = [
+                (c, mw.GetBondBetweenAtoms(*c)) for c in comb if mw.GetBondBetweenAtoms(*c) is not None
+            ]
+            for b in b_list_2:
                 if b[-1].GetBondType().__str__() == "DOUBLE":
                     mw.RemoveBond(*b[0])
                     mw.AddBond(*b[0], Chem.rdchem.BondType.SINGLE)
@@ -359,11 +591,11 @@ def modify(mol, max_double_in_6ring=0):
     p3 = Chem.MolFromSmarts("[#8]=[#6]1-[#6,#7]~&@[#6,#7]~&@[#6,#7]~&@[#6,#7]~&@[#6,#7]-1")
     p3_ = Chem.MolFromSmarts("[O]=[C]1-[C,N]~&@[C,N]~&@[C,N]~&@[C,N]~&@[C,N]-1")
     subs = set(list(mw.GetSubstructMatches(p3)) + list(mw.GetSubstructMatches(p3_)))
-    subs_set_2 = [set(s) for s in subs]
+    subs_set_2: list[set[int]] = [set(s) for s in subs]
     for sub in subs:
         comb = itertools.combinations(sub, 2)
-        b_list = [(c, mw.GetBondBetweenAtoms(*c)) for c in comb if mw.GetBondBetweenAtoms(*c) is not None]
-        for b in b_list:
+        b_list_3 = [(c, mw.GetBondBetweenAtoms(*c)) for c in comb if mw.GetBondBetweenAtoms(*c) is not None]
+        for b in b_list_3:
             if b[-1].GetBondType().__str__() == "DOUBLE" and b[-1].IsInRing() is True:
                 mw.RemoveBond(*b[0])
                 mw.AddBond(*b[0], Chem.rdchem.BondType.SINGLE)
@@ -382,7 +614,9 @@ def modify(mol, max_double_in_6ring=0):
         if pass_sub:
             continue
 
-        bond_list = [(i, sub[0]) if ix + 1 == len(sub) else (i, sub[ix + 1]) for ix, i in enumerate(sub)]
+        bond_list: list[tuple[int, int]] = [
+            (i, sub[0]) if ix + 1 == len(sub) else (i, sub[ix + 1]) for ix, i in enumerate(sub)
+        ]
         if len(bond_list) == 0:
             continue
         atoms = [mw.GetAtomWithIdx(i) for i in sub]
@@ -393,8 +627,8 @@ def modify(mol, max_double_in_6ring=0):
             ):
                 break
         else:
-            bond_type = [mw.GetBondBetweenAtoms(*b).GetBondType().__str__() for b in bond_list]
-            if bond_type.count("DOUBLE") > max_double_in_6ring:
+            bond_type_strs = [mw.GetBondBetweenAtoms(*b).GetBondType().__str__() for b in bond_list]
+            if bond_type_strs.count("DOUBLE") > max_double_in_6ring:
                 for b in bond_list:
                     mw.RemoveBond(*b)
                     mw.AddBond(*b, Chem.rdchem.BondType.AROMATIC)
@@ -417,7 +651,7 @@ def modify(mol, max_double_in_6ring=0):
         rd_mol.AddBond(node_i, node_j, bt)
     out_mol = rd_mol.GetMol()
 
-    # check validility of the new mol
+    # check validity of the new mol
     mol_check = Chem.MolFromSmiles(Chem.MolToSmiles(out_mol))
     if mol_check:
         try:
@@ -432,7 +666,21 @@ def modify(mol, max_double_in_6ring=0):
         return mol_copy
 
 
-def save_sdf(mol_list, save_name="mol_gen.sdf"):
+def save_sdf(mol_list: Sequence[Mol], save_name: str = "mol_gen.sdf") -> None:
+    """
+    Save molecules to an SDF file with simple computed properties.
+
+    For each molecule, this computes:
+
+    - Exact molecular weight (`MW`)
+    - RDKit Crippen logP (`LOGP`)
+
+    and writes them as SDF properties. Molecules are Kekulized before writing.
+
+    Args:
+        mol_list: Molecules to write.
+        save_name: Output SDF path.
+    """
     writer = Chem.SDWriter(save_name)
     writer.SetProps(["LOGP", "MW"])
     for i, mol in enumerate(mol_list):
@@ -446,22 +694,38 @@ def save_sdf(mol_list, save_name="mol_gen.sdf"):
     writer.close()
 
 
-def check_alert_structure(mol, alert_smarts):
+def check_alert_structure(mol: Mol, alert_smarts: str) -> bool:
+    """
+    Check whether a molecule matches a single alert SMARTS pattern.
+
+    Args:
+        mol: Molecule to search.
+        alert_smarts: SMARTS pattern defining the alert.
+
+    Returns:
+        True if the molecule contains at least one match, otherwise False.
+    """
     Chem.GetSSSR(mol)
     pattern = Chem.MolFromSmarts(alert_smarts)
     subs = mol.GetSubstructMatches(pattern)
-    if len(subs) == 0:
-        return False
-    else:
-        return True
+    return len(subs) != 0
 
 
-def check_alert_structures(mol, alert_smarts_list):
+def check_alert_structures(mol: Mol, alert_smarts_list: Sequence[str]) -> bool:
+    """
+    Check whether a molecule matches any alert SMARTS patterns.
+
+    Args:
+        mol: Molecule to search.
+        alert_smarts_list: A list/sequence of SMARTS patterns.
+
+    Returns:
+        True if any pattern matches, otherwise False.
+    """
     Chem.GetSSSR(mol)
     patterns = [Chem.MolFromSmarts(sma) for sma in alert_smarts_list]
     for p in patterns:
         subs = mol.GetSubstructMatches(p)
         if len(subs) != 0:
             return True
-    else:
-        return False
+    return False
