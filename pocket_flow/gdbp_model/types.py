@@ -4,4 +4,3 @@ from torch import Tensor
 type ScalarVectorFeatures = tuple[Tensor, Tensor]
 
 type BottleneckSpec = int | tuple[int, int]
-

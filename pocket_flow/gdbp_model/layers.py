@@ -985,6 +985,6 @@ class AttentionEdges(Module):
         ]
 
         output = [edge_attr[0] + output[0], edge_attr[1] + output[1]]
-        output = (self.layernorm_sca(output[0]), self.layernorm_vec(output[1]))
+        output = [self.layernorm_sca(output[0]), self.layernorm_vec(output[1])]
 
-        return output
+        return (output[0], output[1])
